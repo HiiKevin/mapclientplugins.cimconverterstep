@@ -12,25 +12,71 @@ from mpl_toolkits.mplot3d import Axes3D, art3d
 
 
 class Subdivision_Surface():
-    # This class create a surface from the control mesh, based on Catmull
-    # Clark subdivision surface method
+    '''
+    This class create a surface from the control mesh, based on Catmull
+    Clark subdivision surface method
+        ...
+        Attributes
+        ----------
+        etPos : array-like
+            Matrix containing model after subdivision
+        matrix : array-like
+            Subdivision matrix (from coarse mesh to 3D model)  
+        numNodes : int
+            Number of nodes (coarse mesh)  
+        numElements : int
+            Number of elements 
+        ETIndices : array-like
+            Faces (subdivided model)
+        control_mesh : array-like
+            Coarse mesh 
+        faceCM : array-like
+            Coarse mesh connections
+        faceCMsorted : array-like
+            Faces (coarse mesh/template)
+        etVertexStartEnd : array-like
+            Start and End indices 
+        CMStartEnd : array-like
+            Start and End indices 
+        SurfaceStartEnd : array-like
+            Start and End indices
+                    
+        Methods
+        -------
+        Plot(SurfaceType,time_frame = 0)
+            Plots the points of the model at a specified time frame on a 3d axis for visualisation.
+        PlotCM(SurfaceType,time_frame = 0)
+            Plots the points of the coarse mesh at a specified time frame on a 3d axis for visualisation.
+    '''   
     etPos = None                # model after subdivision 
     matrix = None               # subdivision matrix (from coarse mesh to 3D model)        
     numNodes = 388              # number of nodes (coarse mesh)                 
     numElements = 187;          # number of elements 
     ETIndices = None            # Faces (subdivided model)
-    control_mesh= None          # Coarse mesh 
-    faceCM = None               # Coarse mesh connections
+    control_mesh = None         # Coarse mesh 
+    faceCM = None               # Coarse mesh connections 
     faceCMsorted = None         # Faces (coarse mesh/template)
     
     def __init__(self,type,FilePath):
+        """
+        Inputs
+        ------
+        type: str
+            initialisation type
+        FilePath: path-like
+            directory where the model folder(s) are stored
+        """
+
         dir_path=os.path.dirname(os.path.realpath(__file__))
+        # load in matrices from text
         self.matrix = np.loadtxt(dir_path+'\\subdivision_matrix.txt') 
         self.ETIndices = np.loadtxt(dir_path+'\\ETIndices.txt')
         self.faceCM = np.loadtxt(dir_path+'\\ETIndices_control_mesh.txt')
-        self.CMStartEnd = np.array([[1,96], # LV
+        # initialise matrix indices
+        self.CMStartEnd = np.array([[1,96],   # LV
                                     [97,211], # RV
-                                    [212,354]])-1 #Epi
+                                    [212,354] # Epi
+                                    ])-1      # convert indexing from 1 index to 0 index
         self.etVertexStartEnd = np.array([[1,1500],         # LV (vertices 1 to 1500 belong to the LV chamber...)
                                           [1501,2165],      # RVS
                                           [2166,3224],      # RVFW
@@ -39,7 +85,8 @@ class Subdivision_Surface():
                                           [5632,5656],      # Aortic valve
                                           [5657,5697],      # Tricuspid valve
                                           [5698,5730],      # Pulmonary valve
-                                          [5731,5810]])-1   # RV insert
+                                          [5731,5810]       # RV insert
+                                          ])-1              # convert indexing from 1 index to 0 index
         self.SurfaceStartEnd = np.array([[1,3072],          # LV (vertices 1 to 3072 belong to the LV chamber...)
                                          [3073,4480],       # RVS
                                          [4481,6752],       # RVFW
@@ -48,32 +95,42 @@ class Subdivision_Surface():
                                          [11665,11688],     # Aortic valve
                                          [11689,11728],     # Tricuspid valve
                                          [11729,11760]      # Pulmonary valve
-                                         ])-1               
+                                         ])-1               # convert indexing from 1 index to 0 index
 
         if type == 'InitFromControlMesh':
             self.control_mesh[:,:,1] = np.loadtxt(FilePath); 
             self.etPos[:,:,1] = np.matmul(self.matrix,self.control_mesh)
         elif type =='InitFromCIM':
-            if  len(glob.glob(os.path.abspath(FilePath)+"\\*model\\*")) > 0:
-                files = glob.glob(os.path.abspath(FilePath)+"\\*model\\*.model")
+            if  len(glob.glob(os.path.abspath(FilePath)+"\\*model\\*")) > 0: # ensure model folder(s) exists
+                # extract .model files and sort numerically
+                files = glob.glob(os.path.abspath(FilePath)+"\\*model\\*.model") 
                 files = natsort.natsorted(files)
+                # read each model file and store data
                 for i in range(0,len(files)):
                     P = ReadFromCIMRVLVModel(os.path.join(os.path.abspath(FilePath),files[i]))
                     if self.control_mesh is not None:
                         self.control_mesh=np.concatenate((self.control_mesh, np.array([[P.XParameters,P.YParameters,P.ZParameters]]).T),axis=2)
                     else:
-                        self.control_mesh=np.array([[P.XParameters,P.YParameters,P.ZParameters]]).T
+                        self.control_mesh=np.array([[P.XParameters,P.YParameters,P.ZParameters]]).T     # initialise matrix on first time
                     if self.etPos is not None:    
                         self.etPos=np.concatenate((self.etPos,np.matmul(self.matrix,self.control_mesh[:,:,i])[:,:,np.newaxis]),axis=2)
                     else:
-                        self.etPos = np.matmul(self.matrix,self.control_mesh[:,:,i])[:,:,np.newaxis]
+                        self.etPos = np.matmul(self.matrix,self.control_mesh[:,:,i])[:,:,np.newaxis]    # initialise matrix on first time
             else:
                 raise Exception('No CIM model folder found')
         else:
             raise Exception('please select your initialisation: InitFromCIM if you are dealing with CIM data or InitFromControlMesh if you only have a coarse mesh')
         
     def Plot(self,SurfaceType,time_frame = 0):
-        # Function to plot surface
+        """Plots the points of the model at a specified time frame on a 3d axis for visualisation.
+
+        Inputs
+        ------
+        SurfaceType: str
+            Type of surface that is to be plotted
+        time_frame: int, optional
+            Index of which time frame is to be plotted (default is 0)
+        """
 
         if SurfaceType=='endo':
             faces_lv=self.ETIndices[range(self.SurfaceStartEnd[0,0],self.SurfaceStartEnd[0,1]+1),:]
@@ -142,6 +199,16 @@ class Subdivision_Surface():
             plt.show()
     
     def PlotCM(self,SurfaceType,time_frame = 0):
+        """Plots the points of the coarse mesh at a specified time frame on a 3d axis for visualisation.
+
+        Inputs
+        ------
+        SurfaceType: str
+            Type of surface that is to be plotted
+        time_frame: int, optional
+            Index of which time frame is to be plotted (default is 0)
+        """
+
         if SurfaceType=='all':
             faces_lv=self.faceCM[range(self.CMStartEnd[0,0],self.CMStartEnd[0,1]+1),:]
             faces_rv=self.faceCM[range(self.CMStartEnd[1,0],self.CMStartEnd[1,1]+1),:]
@@ -225,12 +292,42 @@ class Subdivision_Surface():
 
 
 class ReadFromCIMRVLVModel():
+    '''
+    This class creates an RVLV model by reading from from a CIM RVLV file
+        ...
+        Attributes
+        ----------
+        ScaleFactor : float
+            Scale factor
+        ModelToMagnetTransform : array-like
+            Model to magnet transform matrix
+        XParameters : array-like
+            X coordinates  
+        YParameters : array-like
+            Y coordinates  
+        ZParameters : array-like
+            Z coordinates  
+    '''  
+
     def __init__(self,cim_file):
-        params = ['scaleFactor'.casefold(),'ModelToMagnetTransform:ScaleFactor'.casefold(),'ModelToMagnetTransform'.casefold(),'XParameters'.casefold(),'YParameters'.casefold(),'ZParameters'.casefold()]
+        """
+        Inputs
+        ------
+        cim_file: path-like
+            directory of CIM (.model) file to be read
+        """
+
+        # initialise dictionary for parameter types
+        params = ['scaleFactor'.casefold(),
+                  'ModelToMagnetTransform:ScaleFactor'.casefold(),
+                  'ModelToMagnetTransform'.casefold(),'XParameters'.casefold(),
+                  'YParameters'.casefold(),'ZParameters'.casefold()]
         df=pd.DataFrame({"type": pd.Series(['scalar','scalar','invIJK','vector','vector','vector'],index=params),
                          "value": pd.Series([[],[],[],[],[],[]], index=params)
                         })
+        # ensure files can be read
         assert os.path.isfile(cim_file), 'Cannot read file ' + cim_file
+        # read each .model file
         with open(cim_file, "r") as file:
             line = file.readline()
             while len(line) != 0:
@@ -264,6 +361,7 @@ class ReadFromCIMRVLVModel():
                     continue
                 line=file.readline()
         file.close() 
+        # store data in appropriate arrays
         self.scaleFactor=df['value']['scaleFactor'.casefold()]
         self.ModelToMagnetTransform=np.array(df['value']['ModelToMagnetTransform'.casefold()]).T
         self.XParameters=np.array(df['value']['XParameters'.casefold()])
@@ -272,11 +370,15 @@ class ReadFromCIMRVLVModel():
         
 
 def main():
+    """This script reads the cardiohance_082 .model files to create a Subdivision_Surface
+    model and writes the xyz coordinates of the model to csv files in the OutputPath.
+    """
+
     FilePath = '.\\input\\cardiohance_082'
     OutputPath = '.\\output_python'
     model = Subdivision_Surface('InitFromCIM',FilePath)
-    model.Plot('all')
     time_frame = np.shape(model.etPos)[2]
+    # write to csv (disabled for debugging)
     if False:
         for i in range(time_frame):
                 LVendo = model.etPos[range(model.etVertexStartEnd[0,0],model.etVertexStartEnd[0,1]+1),:,i]
